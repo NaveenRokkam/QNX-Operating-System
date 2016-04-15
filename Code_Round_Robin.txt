@@ -1,0 +1,146 @@
+#include <cstdlib>
+#include <iostream.h>
+#include <spawn.h>
+#include <stdio.h>
+#include <process.h>
+#include <sched.h>
+#include <sys/times.h>
+#include <unistd.h>
+#include <cstdlib>
+#include <time.h>
+#include <sys/neutrino.h>
+#include <pthread.h>
+
+//--------------------------------------------------------------------
+void * funcThreadA( void *c )
+{
+   int a_loop;
+   int a_job = *(int*)c; // Pointer to Pointer of loop counter from Main loop. a_job would contain Job no.
+
+   cout<<"This is Task A and thread id is:"<< pthread_self() <<endl;
+   for ( a_loop = 1; a_loop <= 4; a_loop++ )
+   {
+  	 cout<< "Task A-> Job No:"<< a_job<<"\tLoop Iteration:"<<a_loop<<endl; // Introducing a 2 milli second delay
+  	 delay(1);
+   }
+   return EXIT_SUCCESS;
+}
+
+//--------------------------------------------------------------------
+void * funcThreadB( void *c)
+{
+   int b_loop;
+   int b_job = *(int*)c; // Pointer to Pointer of loop counter from Main loop. b_job would contain Job no.
+
+   cout<<"This is Task B and thread id is:"<< pthread_self() <<endl;
+   for ( b_loop = 1; b_loop <= 2; b_loop++ )
+   {
+	 cout<< "Task B-> Job No:"<< b_job<<"\tLoop Iteration:"<<b_loop<<endl; // Introducing a 2 milli second delay
+	 delay(6);
+   }
+   return EXIT_SUCCESS;
+}
+
+//******************************************************************//
+//------------------------------------------------------------------//
+int main(int argc, char *argv[]) {
+	// Variable Declarations
+	int pid_main;
+	int pid_task_a;
+	int pid_task_b;
+	int tid_main;
+	int tid_task_a;
+	int tid_task_b;
+	clockid_t clockid;
+
+	/*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*/
+	/*-----------------------------------------------------------------*/
+	std::cout <<"**********Round Robin Scheduling************"<< std::endl;
+
+	pid_main= getpid(); //This is the PiD of the calling process - Main Process
+
+	/*-----------------------------------------------------------------*/
+	// Step 1 - Check what is the current clockperiod and system timeslice for RR
+	/*-----------------------------------------------------------------*/
+	struct timespec clock_res;
+	struct timespec schedule_int_rr;
+
+	if ( clock_getres( CLOCK_REALTIME, &clock_res) == -1 ){
+			perror( "Error clock get resolution" );
+			return EXIT_FAILURE;
+	}
+	cout<< "Clock Resolution is: \t \t" << clock_res.tv_nsec / 1000 << " Micro Seconds"<<endl;
+
+	if ( sched_rr_get_interval( pid_main, &schedule_int_rr) == -1 ){
+			perror( "Error clock get resolution" );
+			return EXIT_FAILURE;
+	}
+	cout<< "Round Robin timeslice is:\t" <<schedule_int_rr.tv_nsec / 1000 << "Micro Seconds"<<endl;
+
+	cout<< "Main Process Id: \t" <<pid_main<< "\n"<< endl;
+	tid_main = gettid();
+	cout<< "Main Process thread Id before fork:" << tid_main << endl;
+
+	/*-----------------------------------------------------------------*/
+	// Step 2 - Start a new process
+	/*-----------------------------------------------------------------*/
+	// fork a new process
+	if (pid_task_b = fork())
+	{
+	//----------------------------------------------------------------------------------------------------------------//
+		struct timespec beforetime_b[100], aftertime_b[100]; // Arrays to hold Beforetime and After time for Task B
+		pthread_t thread_b[100]; // Threads that would be raised by Task B
+		int job_count_b;
+
+		//-------------------------------------------------------------------------------------------------//
+		// This is Child Process or Forked Process
+		pid_task_b = pid_main;  // The main Pid Would now be Task B pid
+		tid_task_b = gettid();
+		cout<< "The Parent Process Block is successfully getting executed and will now be called Task B \n"
+			   "The Process Id of Task B: \t" <<pid_task_b << endl;
+		cout<< "Task B thread Id after fork:" << tid_task_b << endl;
+
+		//-------------------------------------------------------------------------------------------------//
+		for ( job_count_b = 1; job_count_b <=100 ; job_count_b++ )
+		{
+			clock_gettime( CLOCK_REALTIME, &beforetime_b[job_count_b] );
+			pthread_create( &thread_b[job_count_b] , NULL , &funcThreadB, &job_count_b );
+			pthread_join(thread_b[job_count_b],NULL);
+			clock_gettime( CLOCK_REALTIME, &aftertime_b[job_count_b] );
+			cout<<"B -> Job No:" <<job_count_b<<"\tBeforetime: Sec:"<<beforetime_b[job_count_b].tv_sec<<"\t Micro Seconds:"<<beforetime_b[job_count_b].tv_nsec / 1000<< "\n";
+			cout<<"B -> Job No:" <<job_count_b<<"\tAftertime: Sec:"<<aftertime_b[job_count_b].tv_sec<<"\t Micro Seconds:"<<aftertime_b[job_count_b].tv_nsec / 1000<< "\n";
+			cout<<"B ---> Job No:"<<job_count_b<<"\t\t Difference in Times Seconds:" << aftertime_b[job_count_b].tv_sec - beforetime_b[job_count_b].tv_sec << "\t->Micro Seconds" <<(aftertime_b[job_count_b].tv_nsec - beforetime_b[job_count_b].tv_nsec)/1000 <<endl;
+		}
+		cout<<"All Jobs of Task B are completed"<<endl;
+	}
+	else
+	{
+	//----------------------------------------------------------------------------------------------------------------//
+		struct timespec beforetime_a[100], aftertime_a[100]; // Arrays to hold Beforetime and After time for Task A
+		pthread_t thread_a[100]; // Threads that would be raised by Task A
+		int job_count_a;
+		//----------------------------------------------------------------------------------------------------------------//
+		// Parent Process
+		pid_task_a = getpid(); //
+		tid_task_a = gettid(); // thread id of Task A
+		cout<< "The Parent Process Block is successfully getting executed and will now be called Task A \n"
+			   "The Process Id of Task A: \t" <<pid_task_a<< endl;
+		cout<< "Task A thread Id after fork:" << tid_task_a << endl;
+
+		for ( job_count_a = 1; job_count_a <=100 ; job_count_a++ )
+		{
+			clock_gettime( CLOCK_REALTIME, &beforetime_a[job_count_a] );
+			pthread_create( &thread_a[job_count_a] , NULL , &funcThreadA, &job_count_a );
+			pthread_join(thread_a[job_count_a],NULL);
+			clock_gettime( CLOCK_REALTIME, &aftertime_a[job_count_a] );
+			cout<<"A -> Job No:" << job_count_a<< "\tBeforetime: Sec:"<<beforetime_a[job_count_a].tv_sec<<"\t Micro Seconds:"<<beforetime_a[job_count_a].tv_nsec /1000<< "\n";
+			cout<<"A -> Job No:" << job_count_a<< "\tAftertime: Sec:"<<aftertime_a[job_count_a].tv_sec<<"\t Micro Seconds:"<<aftertime_a[job_count_a].tv_nsec /1000<< "\n";
+			cout<<"A ---> Job No:"<<job_count_a<<"\t\t Difference in Times Seconds:" << aftertime_a[job_count_a].tv_sec - beforetime_a[job_count_a].tv_sec << "\t->Micro Seconds" <<(aftertime_a[job_count_a].tv_nsec - beforetime_a[job_count_a].tv_nsec)/1000 <<endl;
+		}
+		cout<<"All Jobs of Task A are completed"<<endl;
+	}
+	return EXIT_SUCCESS;
+}
+
+
+
